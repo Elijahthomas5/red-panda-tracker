@@ -1,7 +1,7 @@
 name: Red Panda Zone Watcher
 on:
   schedule:
-    - cron: '0 12 * * *'  # 8 AM ET daily
+    - cron: '0 */6 * * *'  # Every 6 hours — picks up new Kajabi prices within 6h
   workflow_dispatch:
 jobs:
   update-zones:
