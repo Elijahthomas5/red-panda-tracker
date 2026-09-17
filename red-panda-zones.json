@@ -1,5 +1,5 @@
 {
-  "_updated": "2026-08-24",
+  "_updated": "2026-09-17",
   "_label": "Red Panda Academy Stock Club - Monthly Prices",
   "_note": "Edit this file and push to update zone prices in the tracker. Format: [loadTheBoat, swingTrade, quickEntry] \u2014 use null if not provided.",
   "tickers": {
@@ -46,9 +46,9 @@
     "AMD": {
       "name": "AMD",
       "prices": [
-        242.93,
-        334.81,
-        464.79
+        1.0,
+        312.76,
+        2.0
       ]
     },
     "LLY": {
@@ -70,17 +70,17 @@
     "XOM": {
       "name": "ExxonMobil",
       "prices": [
-        92.6,
-        130.67,
-        141.15
+        1.0,
+        94.2,
+        2.0
       ]
     },
     "IREN": {
       "name": "Iren Ltd",
       "prices": [
-        22.11,
-        31.96,
-        null
+        11.34,
+        15.65,
+        24.48
       ]
     },
     "AXP": {
@@ -110,9 +110,9 @@
     "XLV": {
       "name": "Health Care ETF",
       "prices": [
-        141.37,
-        150.03,
-        157.15
+        1.0,
+        128.21,
+        2.0
       ]
     },
     "HD": {
@@ -134,9 +134,9 @@
     "PANW": {
       "name": "Palo Alto Networks",
       "prices": [
-        239.05,
-        322.26,
-        326.44
+        1.0,
+        159.7,
+        2.0
       ]
     },
     "NBIS": {
@@ -150,9 +150,9 @@
     "JKHY": {
       "name": "Jack Henry & Assoc",
       "prices": [
-        123.75,
-        140.69,
-        88.48
+        1.0,
+        99.93,
+        2.0
       ]
     },
     "WMT": {
@@ -182,9 +182,9 @@
     "AVGO": {
       "name": "Broadcom",
       "prices": [
-        212.64,
-        339.84,
-        347.21
+        226.52,
+        292.47,
+        304.42
       ]
     },
     "TSLA": {
@@ -246,9 +246,9 @@
     "APLD": {
       "name": "Applied Digital",
       "prices": [
-        9.9,
-        13.4,
-        null
+        7.88,
+        10.21,
+        20.5
       ]
     },
     "SCHD": {
@@ -286,49 +286,49 @@
     "QQQ": {
       "name": "Nasdaq-100 ETF",
       "prices": [
-        530.49,
-        649.85,
-        677.28
+        577.39,
+        671.86,
+        687.13
       ]
     },
     "QQQM": {
       "name": "Nasdaq-100 Mini ETF",
       "prices": [
-        223.4,
-        272.59,
-        283.93
+        179.53,
+        242.97,
+        281.2
       ]
     },
     "ADI": {
       "name": "Analog Devices",
       "prices": [
-        293.95,
-        336.75,
-        344.92
+        301.38,
+        324.51,
+        344.49
       ]
     },
     "AEP": {
       "name": "American Elec Power",
       "prices": [
-        119.3,
-        124.87,
-        129.71
+        94.74,
+        114.5,
+        117.19
       ]
     },
     "MPWR": {
       "name": "Monolithic Power",
       "prices": [
-        955.11,
-        1124.63,
-        71.7
+        701.01,
+        947.89,
+        988.91
       ]
     },
     "CME": {
       "name": "CME Group",
       "prices": [
-        217.59,
-        225.0,
-        238.03
+        142.87,
+        228.0,
+        258.91
       ]
     },
     "MS": {
@@ -342,17 +342,17 @@
     "COF": {
       "name": "Capital One",
       "prices": [
-        162.19,
-        188.35,
-        198.55
+        103.7,
+        166.76,
+        189.89
       ]
     },
     "TSM": {
       "name": "Taiwan Semiconductor",
       "prices": [
-        302.81,
-        377.47,
-        380.88
+        297.09,
+        374.78,
+        392.76
       ]
     },
     "RKLB": {
@@ -366,17 +366,17 @@
     "ASTS": {
       "name": "AST SpaceMobile",
       "prices": [
-        25.91,
-        44.68,
-        47.22
+        18.25,
+        35.49,
+        38.15
       ]
     },
     "HOOD": {
       "name": "Robinhood",
       "prices": [
-        53.47,
-        85.83,
-        93.74
+        45.25,
+        67.15,
+        100.81
       ]
     },
     "ECL": {
@@ -390,25 +390,25 @@
     "PHM": {
       "name": "PulteGroup",
       "prices": [
-        94.08,
-        114.45,
-        120.23
+        89.81,
+        92.38,
+        108.34
       ]
     },
     "UBER": {
       "name": "Uber",
       "prices": [
-        59.69,
-        60.36,
-        null
+        43.84,
+        55.96,
+        67.11
       ]
     },
     "WM": {
       "name": "Waste Management",
       "prices": [
-        192.68,
-        204.98,
-        224.29
+        128.33,
+        198.65,
+        210.47
       ]
     },
     "SNDK": {
@@ -422,17 +422,17 @@
     "SMH": {
       "name": "Semiconductor ETF",
       "prices": [
-        294.95,
-        470.83,
-        504.15
+        443.86,
+        496.15,
+        513.85
       ]
     },
     "ASML": {
       "name": "ASML Holding",
       "prices": [
-        1038.84,
-        1653.27,
-        null
+        1123.9,
+        1333.59,
+        1495.31
       ]
     },
     "ARM": {
@@ -446,17 +446,17 @@
     "CLH": {
       "name": "Clean Harbors",
       "prices": [
-        179.58,
-        265.87,
-        290.08
+        185.82,
+        260.75,
+        299.47
       ]
     },
     "AMAT": {
       "name": "Applied Materials",
       "prices": [
-        349.48,
-        458.66,
-        477.26
+        216.77,
+        318.73,
+        367.62
       ]
     },
     "GILD": {
@@ -470,33 +470,33 @@
     "WDC": {
       "name": "Western Digital",
       "prices": [
-        290.69,
-        441.02,
-        458.31
+        193.47,
+        301.13,
+        329.3
       ]
     },
     "COHR": {
       "name": "Coherent Corp",
       "prices": [
-        155.85,
-        225.05,
-        233.05
+        185.54,
+        203.28,
+        225.05
       ]
     },
     "BMO": {
       "name": "Bank of Montreal",
       "prices": [
-        122.23,
-        159.89,
-        172.01
+        139.94,
+        155.92,
+        162.11
       ]
     },
     "GLW": {
       "name": "Corning",
       "prices": [
-        90.18,
-        128.39,
-        145.66
+        94.55,
+        110.11,
+        116.79
       ]
     },
     "MRVL": {
@@ -534,65 +534,65 @@
     "TXN": {
       "name": "Texas Instruments",
       "prices": [
-        177.59,
-        233.59,
-        257.9
+        211.2,
+        229.42,
+        237.66
       ]
     },
     "STX": {
       "name": "Seagate Technology",
       "prices": [
-        538.72,
-        643.39,
+        463.23,
+        662.18,
         null
       ]
     },
     "VGT": {
       "name": "Vanguard Info Tech ETF",
       "prices": [
-        90.63,
-        101.78,
-        105.84
+        66.46,
+        94.26,
+        109.99
       ]
     },
     "KLAC": {
       "name": "KLA Corp (post-split)",
       "prices": [
-        145.59,
-        175.28,
-        192.38
+        117.43,
+        140.61,
+        null
       ]
     },
     "MELI": {
       "name": "MercadoLibre",
       "prices": [
-        1342.38,
-        1456.38,
-        1576.21
+        1354.14,
+        1550.8,
+        1771.98
       ]
     },
     "CMI": {
       "name": "Cummins",
       "prices": [
-        471.85,
-        572.23,
-        606.89
+        303.52,
+        455.21,
+        null
       ]
     },
     "XLU": {
       "name": "Utilities Sector ETF",
       "prices": [
-        38.43,
-        44.23,
+        24.51,
+        35.05,
         null
       ]
     },
     "VRT": {
       "name": "Vertiv Holdings",
       "prices": [
-        153.81,
-        246.17,
-        259.67
+        158.86,
+        170.47,
+        199.35
       ]
     },
     "VTI": {
@@ -606,17 +606,17 @@
     "TQQQ": {
       "name": "3x Nasdaq ETF",
       "prices": [
-        24.86,
-        53.6,
-        59.36
+        25.44,
+        44.65,
+        59.57
       ]
     },
     "TECL": {
       "name": "3x Tech ETF",
       "prices": [
-        104.75,
-        145.75,
-        161.25
+        105.56,
+        154.68,
+        174.54
       ]
     },
     "SOXL": {
@@ -630,17 +630,17 @@
     "GEV": {
       "name": "GE Vernova",
       "prices": [
-        676.63,
-        918.97,
-        975.59
+        422.6,
+        705.47,
+        830.01
       ]
     },
     "ANET": {
       "name": "Arista Networks",
       "prices": [
-        74.78,
-        128.62,
-        137.2
+        62.12,
+        115.77,
+        168.79
       ]
     }
   }
