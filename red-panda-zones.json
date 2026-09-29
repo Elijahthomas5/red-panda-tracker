@@ -1,5 +1,5 @@
 {
-  "_updated": "2026-09-17",
+  "_updated": "2026-09-29",
   "_label": "Red Panda Academy Stock Club - Monthly Prices",
   "_note": "Edit this file and push to update zone prices in the tracker. Format: [loadTheBoat, swingTrade, quickEntry] \u2014 use null if not provided.",
   "tickers": {
@@ -438,9 +438,9 @@
     "ARM": {
       "name": "Arm Holdings",
       "prices": [
-        133.69,
-        269.82,
-        350.23
+        126.46,
+        180.38,
+        255.07
       ]
     },
     "CLH": {
@@ -598,9 +598,9 @@
     "VTI": {
       "name": "Vanguard Total Mkt ETF",
       "prices": [
-        313.42,
-        352.35,
-        358.14
+        322.26,
+        364.59,
+        371.16
       ]
     },
     "TQQQ": {
