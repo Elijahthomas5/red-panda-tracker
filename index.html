@@ -544,35 +544,48 @@ async function refreshAllPrices() {
   if (!key) { await checkSchwab(); return; }
   document.getElementById('last-update').textContent = 'Refreshing…';
   const syms = Object.keys(RP_DATA);
+  const BATCH = 10;
+  let anySuccess = false;
   try {
-    const r = await fetch(`${TRADIER_URL}?symbols=${syms.join(',')}&greeks=false`, {
-      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await r.json();
-    const rawQ = data?.quotes?.quote;
-    const quotes = Array.isArray(rawQ) ? rawQ : (rawQ ? [rawQ] : []);
-    quotes.forEach(q => {
-      const sym = q.symbol;
-      const price = q.last ?? q.bid ?? null;
-      if (sym && price != null) {
-        const prev = livePrices[sym];
-        livePrices[sym] = price;
-        if (prev !== undefined && alertsEnabled) checkZoneAlert(sym, price, prev);
-      }
-    });
+    for (let i = 0; i < syms.length; i += BATCH) {
+      const batch = syms.slice(i, i + BATCH);
+      const r = await fetch(TRADIER_URL + '?symbols=' + batch.join(',') + '&greeks=false', {
+        headers: { Authorization: 'Bearer ' + key, Accept: 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      const rawQ = data?.quotes?.quote;
+      const quotes = Array.isArray(rawQ) ? rawQ : (rawQ ? [rawQ] : []);
+      quotes.forEach(q => {
+        const sym = q.symbol;
+        const price = q.last ?? q.bid ?? null;
+        if (sym && price != null) {
+          const prev = livePrices[sym];
+          livePrices[sym] = price;
+          if (prev !== undefined && alertsEnabled) checkZoneAlert(sym, price, prev);
+          anySuccess = true;
+        }
+      });
+      if (i + BATCH < syms.length) await new Promise(res => setTimeout(res, 200));
+    }
     document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
     const pill = document.getElementById('schwab-pill');
     pill.className = 'status-pill live';
     document.getElementById('schwab-text').textContent = 'Tradier Live';
     schwabConnected = true;
-  } catch {
-    document.getElementById('last-update').textContent = 'Fetch failed';
+  } catch(e) {
+    document.getElementById('last-update').textContent = anySuccess ? 'Partial update' : 'Fetch failed';
+    if (!anySuccess) {
+      const pill = document.getElementById('schwab-pill');
+      pill.className = 'status-pill down';
+      document.getElementById('schwab-text').textContent = 'Key Error';
+      schwabConnected = false;
+    }
   }
   renderTable();
   updateStats();
 }
-
 // ─── ZONE LOGIC ──────────────────────────────────────────────────────────────
 function getZone(sym, price) {
   if (price == null) return 'unknown';
