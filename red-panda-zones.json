@@ -1,5 +1,5 @@
 {
-  "_updated": "2026-09-29",
+  "_updated": "2026-10-13",
   "_label": "Red Panda Academy Stock Club - Monthly Prices",
   "_note": "Edit this file and push to update zone prices in the tracker. Format: [loadTheBoat, swingTrade, quickEntry] \u2014 use null if not provided.",
   "tickers": {
@@ -334,9 +334,9 @@
     "MS": {
       "name": "Morgan Stanley",
       "prices": [
-        145.33,
-        201.95,
-        205.92
+        9.0,
+        28.0,
+        9.0
       ]
     },
     "COF": {
