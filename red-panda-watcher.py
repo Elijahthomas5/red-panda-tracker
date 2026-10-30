@@ -58,7 +58,6 @@ TICKER_RE  = re.compile(r'\b([A-Z]{1,5})\b')
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
     updates = {}
     lines   = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
-
     current_ticker = None
     buf = {"ltb": None, "swing": None, "entry": None, "unlabelled": []}
 
@@ -180,31 +179,62 @@ def run():
         # ── Log into Kajabi ───────────────────────────────────────────────────
         print(f"  Logging in as {RP_EMAIL}…")
         try:
-            # Use load instead of domcontentloaded for better compatibility
             page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
             page.wait_for_timeout(3000)
             print(f"  Login page loaded: {page.url}")
 
-            email_sel = (
-                'input[name="member[email]"], '
-                'input[id="member_email"], '
-                'input[type="email"]'
+            # Diagnose what inputs are present
+            inputs = page.query_selector_all("input")
+            print(f"  Input fields found: {len(inputs)}")
+            for inp in inputs[:10]:
+                try:
+                    itype = inp.get_attribute("type") or "text"
+                    iname = inp.get_attribute("name") or ""
+                    iid   = inp.get_attribute("id") or ""
+                    print(f"    input type={itype} name={iname} id={iid}")
+                except:
+                    pass
+
+            # Try broad selectors — any email or password field
+            email_el = (
+                page.query_selector('input[type="email"]') or
+                page.query_selector('input[name*="email"]') or
+                page.query_selector('input[id*="email"]') or
+                page.query_selector('input[placeholder*="email" i]') or
+                page.query_selector('input[autocomplete="email"]')
             )
-            pw_sel = (
-                'input[name="member[password]"], '
-                'input[id="member_password"], '
-                'input[type="password"]'
+            pw_el = (
+                page.query_selector('input[type="password"]') or
+                page.query_selector('input[name*="password"]') or
+                page.query_selector('input[id*="password"]') or
+                page.query_selector('input[autocomplete="current-password"]')
             )
-            submit_sel = (
-                'input[type="submit"], '
-                'button[type="submit"]'
+            submit_el = (
+                page.query_selector('button[type="submit"]') or
+                page.query_selector('input[type="submit"]') or
+                page.query_selector('button:has-text("Sign in")') or
+                page.query_selector('button:has-text("Log in")')
             )
 
-            page.wait_for_selector(email_sel, timeout=20000)
-            page.fill(email_sel, RP_EMAIL)
-            page.fill(pw_sel, RP_PASSWORD)
-            page.click(submit_sel)
-            # Wait for navigation after login
+            print(f"  email_el found: {email_el is not None}")
+            print(f"  pw_el found: {pw_el is not None}")
+            print(f"  submit_el found: {submit_el is not None}")
+
+            if not email_el or not pw_el:
+                print("  ⚠  Could not find login form fields. Page HTML snippet:")
+                body_text = page.inner_text("body")
+                print("     " + body_text[:800].replace("\n", "\n     "))
+                browser.close()
+                sys.exit(1)
+
+            email_el.fill(RP_EMAIL)
+            pw_el.fill(RP_PASSWORD)
+            if submit_el:
+                submit_el.click()
+            else:
+                pw_el.press("Enter")
+
+            # Wait for navigation away from login page
             try:
                 page.wait_for_url(lambda url: "login" not in url and "sign_in" not in url, timeout=20000)
             except PWTimeout:
@@ -219,7 +249,7 @@ def run():
             print(f"  ✓ Logged in → {page.url}")
 
         except PWTimeout:
-            print(f"  ⚠  Login page timed out. Current URL: {page.url}")
+            print(f"  ⚠  Login timed out. Current URL: {page.url}")
             browser.close()
             sys.exit(1)
 
