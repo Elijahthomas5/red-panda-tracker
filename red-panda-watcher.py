@@ -177,6 +177,18 @@ def run():
             print("  Loading session cookies…")
             try:
                 cookies = json.loads(RP_COOKIES)
+                # Normalize sameSite values — Cookie-Editor exports "no_restriction"
+                # but Playwright only accepts Strict, Lax, or None
+                samesite_map = {"no_restriction": "None", "unspecified": "Lax"}
+                for c in cookies:
+                    ss = c.get("sameSite", "Lax")
+                    c["sameSite"] = samesite_map.get(ss, ss)
+                    # Remove keys Playwright doesn't accept
+                    for k in ["hostOnly", "session", "storeId"]:
+                        c.pop(k, None)
+                    # expirationDate → expires
+                    if "expirationDate" in c:
+                        c["expires"] = c.pop("expirationDate")
                 ctx.add_cookies(cookies)
                 print(f"  ✓ Loaded {len(cookies)} cookies")
 
