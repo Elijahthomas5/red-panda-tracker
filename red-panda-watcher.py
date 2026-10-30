@@ -7,9 +7,10 @@ and updates red-panda-zones.json.
 
 Runs via GitHub Actions (.github/workflows/rp-watcher.yml).
 Requires GitHub secrets:
-  RP_COOKIES  — JSON array of Kajabi session cookies (primary auth method)
-  RP_EMAIL    — fallback if no cookies
-  RP_PASSWORD — fallback if no cookies
+RP_COOKIES — JSON array of Kajabi session cookies (primary auth method)
+RP_EMAIL — fallback if no cookies
+RP_PASSWORD — fallback if no cookies
+GH_PAT — Personal Access Token with repo scope (for auto-refreshing cookies)
 """
 
 import json
@@ -19,12 +20,13 @@ import sys
 from datetime import date
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-ZONES_PATH  = os.path.join(BASE_DIR, 'red-panda-zones.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ZONES_PATH = os.path.join(BASE_DIR, 'red-panda-zones.json')
 
 RP_EMAIL    = os.environ.get("RP_EMAIL", "")
 RP_PASSWORD = os.environ.get("RP_PASSWORD", "")
 RP_COOKIES  = os.environ.get("RP_COOKIES", "")   # JSON array of cookie dicts
+GH_PAT      = os.environ.get("GH_PAT", "")        # PAT for refreshing the secret
 
 KAJABI_LOGIN    = "https://redpandaacademy.mykajabi.com/login"
 KAJABI_HOME     = "https://redpandaacademy.mykajabi.com"
@@ -48,6 +50,58 @@ def save_zones(data):
         json.dump(data, f, indent=2)
     print(f"  ✅ Saved {ZONES_PATH}")
 
+# ─── COOKIE REFRESH ──────────────────────────────────────────────────────────
+def refresh_github_secret(fresh_cookies: list):
+    """Push fresh cookies back to the RP_COOKIES GitHub secret so every
+    subsequent run gets a renewed session — no human intervention needed."""
+    import base64
+
+    if not GH_PAT:
+        print("  ⚠  GH_PAT not set — skipping cookie auto-refresh")
+        return
+
+    gh_repo = os.environ.get("GITHUB_REPOSITORY", "Elijahthomas5/red-panda-tracker")
+
+    try:
+        import requests
+        from nacl import encoding, public
+    except ImportError as e:
+        print(f"  ⚠  Missing library for cookie refresh ({e}) — skipping")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {GH_PAT}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # 1. Fetch the repo's Actions public key (needed to encrypt secrets)
+    key_resp = requests.get(
+        f"https://api.github.com/repos/{gh_repo}/actions/secrets/public-key",
+        headers=headers,
+        timeout=15,
+    )
+    key_resp.raise_for_status()
+    key_data = key_resp.json()
+
+    # 2. Encrypt the cookie JSON with libsodium
+    pub_key = public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder())
+    box      = public.SealedBox(pub_key)
+    encrypted = base64.b64encode(
+        box.encrypt(json.dumps(fresh_cookies).encode())
+    ).decode()
+
+    # 3. Update the secret
+    put_resp = requests.put(
+        f"https://api.github.com/repos/{gh_repo}/actions/secrets/RP_COOKIES",
+        headers=headers,
+        json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
+        timeout=15,
+    )
+    put_resp.raise_for_status()
+    print(f"  ✓ RP_COOKIES secret refreshed ({len(fresh_cookies)} cookies, "
+          f"next expiry extended)")
+
 # ─── PRICE PARSER ────────────────────────────────────────────────────────────
 def get_known_tickers():
     z = load_zones()
@@ -57,7 +111,7 @@ PRICE_RE = re.compile(r'\$?([\d,]+\.?\d*)')
 
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
     updates = {}
-    lines   = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
+    lines = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
     current_ticker = None
     buf = {"ltb": None, "swing": None, "entry": None, "unlabelled": []}
 
@@ -70,7 +124,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
                 buf[slot] = buf["unlabelled"].pop(0)
         if any(buf[k] is not None for k in ["ltb", "swing", "entry"]):
             updates[current_ticker] = [buf["ltb"], buf["swing"], buf["entry"]]
-            print(f"    {current_ticker}: {updates[current_ticker]}")
+            print(f"  {current_ticker}: {updates[current_ticker]}")
         buf = {"ltb": None, "swing": None, "entry": None, "unlabelled": []}
 
     for line in lines:
@@ -98,7 +152,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
                     except ValueError:
                         pass
 
-        try_labelled(LTB_ALIASES,   "ltb")
+        try_labelled(LTB_ALIASES, "ltb")
         try_labelled(SWING_ALIASES, "swing")
         try_labelled(ENTRY_ALIASES, "entry")
 
@@ -145,15 +199,16 @@ def run():
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except ImportError:
-        print("⚠  Playwright not installed.")
+        print("⚠ Playwright not installed.")
         sys.exit(1)
 
     known_tickers = get_known_tickers()
     print(f"\n🐼 Red Panda Watcher — {date.today()}")
-    print(f"   Tracking {len(known_tickers)} tickers\n")
+    print(f"  Tracking {len(known_tickers)} tickers\n")
 
     page_text  = ""
     page_label = ""
+    fresh_cookies = []
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
@@ -172,7 +227,7 @@ def run():
         )
         page = ctx.new_page()
 
-        # ── Auth: cookies first, password fallback ────────────────────────────
+        # ── Auth: cookies first, password fallback ────────────────────────
         if RP_COOKIES:
             print("  Loading session cookies…")
             try:
@@ -208,7 +263,7 @@ def run():
         elif RP_EMAIL and RP_PASSWORD:
             print(f"  Logging in as {RP_EMAIL} (password mode)…")
             print("  ⚠  WARNING: Kajabi login page is protected by Cloudflare.")
-            print("     If this fails, set RP_COOKIES secret instead.")
+            print("  If this fails, set RP_COOKIES secret instead.")
             try:
                 page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
                 page.wait_for_timeout(5000)
@@ -225,7 +280,7 @@ def run():
 
                 if not email_el or not pw_el:
                     print("  ⚠  Login form blocked by Cloudflare bot protection.")
-                    print("     Add RP_COOKIES secret to bypass this.")
+                    print("  Add RP_COOKIES secret to bypass this.")
                     browser.close()
                     sys.exit(1)
 
@@ -248,11 +303,11 @@ def run():
                 sys.exit(1)
 
         else:
-            print("⚠  No auth configured.")
-            print("   Add RP_COOKIES secret (recommended) or RP_EMAIL + RP_PASSWORD.")
+            print("⚠ No auth configured.")
+            print("  Add RP_COOKIES secret (recommended) or RP_EMAIL + RP_PASSWORD.")
             sys.exit(0)
 
-        # ── Find latest prices post from category page ────────────────────────
+        # ── Find latest prices post from category page ────────────────────
         print(f"  Loading category page…")
         try:
             page.goto(CATEGORY_URL, wait_until="load", timeout=60000)
@@ -293,7 +348,7 @@ def run():
             browser.close()
             sys.exit(1)
 
-        # ── Navigate to prices post ───────────────────────────────────────────
+        # ── Navigate to prices post ───────────────────────────────────────
         print(f"  Navigating to prices post…")
         try:
             page.goto(prices_url, wait_until="load", timeout=60000)
@@ -323,6 +378,13 @@ def run():
             browser.close()
             sys.exit(1)
 
+        # ── Capture fresh cookies before closing ─────────────────────────
+        try:
+            fresh_cookies = ctx.cookies()
+            print(f"  ✓ Captured {len(fresh_cookies)} fresh cookies for refresh")
+        except Exception as e:
+            print(f"  ⚠  Could not capture cookies: {e}")
+
         browser.close()
 
     if not page_text.strip():
@@ -334,8 +396,8 @@ def run():
 
     if not updates:
         print("  ⚠  No ticker prices found. Format may have changed.")
-        print("     First 500 chars:")
-        print("     " + page_text[:500].replace("\n", "\n     "))
+        print("  First 500 chars:")
+        print("  " + page_text[:500].replace("\n", "\n  "))
         sys.exit(0)
 
     print(f"\n  Parsed {len(updates)} ticker(s).")
@@ -347,6 +409,15 @@ def run():
         print(f"\n✅ red-panda-zones.json updated ({changed} change(s)).")
     else:
         print("\n✓ No price changes — already up to date.")
+
+    # ── Auto-refresh RP_COOKIES secret so next run still works ───────────
+    if fresh_cookies and GH_PAT:
+        print("\n  Refreshing RP_COOKIES secret…")
+        try:
+            refresh_github_secret(fresh_cookies)
+        except Exception as e:
+            print(f"  ⚠  Cookie refresh failed: {e}")
+            print("  Scrape succeeded — cookies will expire in ~24h.")
 
     sys.exit(0)
 
