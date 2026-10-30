@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install playwright requests && playwright install chromium --with-deps
+        run: pip install playwright playwright-stealth requests && playwright install chromium --with-deps
       - name: Run Red Panda price scraper
         env:
           RP_EMAIL:    ${{ secrets.RP_EMAIL }}
@@ -26,6 +26,5 @@ jobs:
           git config user.email "bot@red-panda-tracker.local"
           git add red-panda-zones.json
           git diff --staged --quiet && echo "No zone changes to commit." && exit 0
-          git commit -m "zones: red panda update $(date -u +%Y-%m-%d) [skip ci]"
-          git pull --rebase origin main
+          git commit -m "zones: red panda price zones auto-update"
           git push
