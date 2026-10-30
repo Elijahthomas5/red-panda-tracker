@@ -23,8 +23,11 @@ ZONES_PATH  = os.path.join(BASE_DIR, 'red-panda-zones.json')
 RP_EMAIL    = os.environ.get("RP_EMAIL", "")
 RP_PASSWORD = os.environ.get("RP_PASSWORD", "")
 
-KAJABI_LOGIN = "https://redpandaacademy.mykajabi.com/login"
-PRICES_URL   = "https://redpandaacademy.mykajabi.com/products/red-panda-academy-stock-club-monthly/categories/2149257404/posts/2153795270"
+KAJABI_LOGIN    = "https://redpandaacademy.mykajabi.com/login"
+CATEGORY_URL    = "https://redpandaacademy.mykajabi.com/products/red-panda-academy-stock-club-monthly/categories/2149257404"
+
+# Keywords that identify the monthly prices post (case-insensitive)
+PRICES_POST_KEYWORDS = ["price", "zone", "monthly", "ltb", "load the boat", "stock club"]
 
 # Label aliases the parser recognizes
 LTB_ALIASES   = {"ltb", "load the boat", "load", "l.t.b", "boat", "ltb zone"}
@@ -56,21 +59,6 @@ TICKER_RE  = re.compile(r'\b([A-Z]{1,5})\b')     # word-boundary uppercase
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
     """
     Parse free-form text into {TICKER: [ltb, swing, entry]} mapping.
-
-    Handles multiple common formats Ian might use, e.g.:
-
-      VOO  573.63 / 651.21 / 686.42
-      AAPL - LTB $229.67  Swing $270.21  Entry $302.87
-      MSFT
-        Load the Boat: $319.38
-        Swing: $385.04
-        Entry: $396.62
-
-    Strategy:
-      1. Walk line by line.
-      2. If a line starts with (or is) a known ticker → open a new ticker context.
-      3. Collect dollar amounts / labelled prices into ltb/swing/entry for that context.
-      4. Assign unlabelled amounts positionally (first=ltb, second=swing, third=entry).
     """
     updates = {}
     lines   = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
@@ -82,11 +70,9 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         nonlocal buf
         if not current_ticker:
             return
-        # Fill from unlabelled in order: ltb → swing → entry
         for slot in ["ltb", "swing", "entry"]:
             if buf[slot] is None and buf["unlabelled"]:
                 buf[slot] = buf["unlabelled"].pop(0)
-        # Only save if we got at least one price
         if any(buf[k] is not None for k in ["ltb", "swing", "entry"]):
             updates[current_ticker] = [buf["ltb"], buf["swing"], buf["entry"]]
             print(f"    {current_ticker}: {updates[current_ticker]}")
@@ -98,24 +84,19 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
 
         line_lower = line.lower()
 
-        # ── Detect ticker at the start of a line ─────────────────────────────
-        # e.g.  "VOO  573.63 / 651.21 / 686.42"
-        #       "AAPL - LTB $229.67 ..."
         first_word = line.split()[0].strip(":-/$.,")
         if first_word in known_tickers:
             flush()
             current_ticker = first_word
             remainder = line[len(first_word):].strip(":-/ \t")
-            line = remainder  # process the rest of this line normally
+            line = remainder
             line_lower = line.lower()
 
         if current_ticker is None:
             continue
 
-        # ── Detect labelled prices ────────────────────────────────────────────
         def try_labelled(aliases, slot):
             for alias in aliases:
-                # Match "alias : $X" or "alias $X" with optional colon/dash
                 pat = rf'(?i)\b{re.escape(alias)}\b[\s:–-]*\$?([\d,]+\.?\d*)'
                 m = re.search(pat, line)
                 if m:
@@ -129,13 +110,10 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         try_labelled(SWING_ALIASES, "swing")
         try_labelled(ENTRY_ALIASES, "entry")
 
-        # ── Collect unlabelled dollar amounts on this line ───────────────────
-        # Only if the line doesn't contain a label we already matched
         has_label = any(alias in line_lower
                         for aliases in [LTB_ALIASES, SWING_ALIASES, ENTRY_ALIASES]
                         for alias in aliases)
 
-        # Extract all bare prices from the line
         prices_on_line = []
         for m in PRICE_RE.finditer(line):
             try:
@@ -158,7 +136,6 @@ def merge_updates(zones: dict, updates: dict, page_label: str) -> dict:
     for ticker, prices in updates.items():
         existing = zones["tickers"].get(ticker)
         if existing is None:
-            # New ticker Ian added — insert with placeholder name
             zones["tickers"][ticker] = {"name": ticker, "prices": prices}
             print(f"  ➕ New ticker added: {ticker}")
             changed += 1
@@ -214,7 +191,6 @@ def run():
             page.goto(KAJABI_LOGIN, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(2000)
 
-            # Kajabi login form: member[email] / member[password]
             email_sel = (
                 'input[name="member[email]"], '
                 'input[id="member_email"], '
@@ -248,13 +224,57 @@ def run():
             browser.close()
             sys.exit(1)
 
+        # ── Find the latest prices post from the category page ───────────────
+        print(f"  Loading category page to find latest prices post…")
+        try:
+            page.goto(CATEGORY_URL, wait_until="networkidle", timeout=45000)
+            page.wait_for_timeout(3000)
+
+            post_links = page.query_selector_all("a[href*='/posts/']")
+            print(f"  Found {len(post_links)} post links on category page")
+
+            prices_url = None
+            for link in post_links:
+                try:
+                    text = link.inner_text().strip().lower()
+                    href = link.get_attribute("href") or ""
+                    if any(kw in text for kw in PRICES_POST_KEYWORDS):
+                        if "http" not in href:
+                            href = "https://redpandaacademy.mykajabi.com" + href
+                        prices_url = href
+                        print(f"  ✓ Found prices post by keyword: {link.inner_text().strip()}")
+                        print(f"    → {prices_url}")
+                        break
+                except:
+                    pass
+
+            if not prices_url and post_links:
+                try:
+                    href = post_links[0].get_attribute("href") or ""
+                    if "http" not in href:
+                        href = "https://redpandaacademy.mykajabi.com" + href
+                    prices_url = href
+                    print(f"  ⚠  No keyword match — using first post: {prices_url}")
+                except:
+                    pass
+
+            if not prices_url:
+                print("  ⚠  Could not find any post links on category page.")
+                print(f"     Page URL: {page.url}")
+                browser.close()
+                sys.exit(1)
+
+        except PWTimeout:
+            print("  ⚠  Category page timed out")
+            browser.close()
+            sys.exit(1)
+
         # ── Navigate to the prices post ───────────────────────────────────────
         print(f"  Navigating to prices post…")
         try:
-            page.goto(PRICES_URL, wait_until="networkidle", timeout=45000)
+            page.goto(prices_url, wait_until="networkidle", timeout=45000)
             page.wait_for_timeout(3000)
 
-            # Try to get the page title / heading as the label
             try:
                 heading = page.query_selector("h1, h2, .post-title, .lesson-title")
                 if heading:
@@ -262,9 +282,8 @@ def run():
             except:
                 pass
 
-            # Extract post content — try multiple Kajabi content selectors
             content_selectors = [
-                ".fr-view",                # Froala rich text editor output
+                ".fr-view",
                 ".post-body",
                 ".post-content",
                 ".lesson-content",
@@ -282,7 +301,6 @@ def run():
                     break
 
             if not page_text:
-                # Last resort: grab everything visible in main area
                 page_text = page.inner_text("body")
                 print(f"  ⚠  Using full body text ({len(page_text)} chars)")
 
@@ -297,7 +315,6 @@ def run():
         print("  ⚠  No text extracted from page — aborting.")
         sys.exit(1)
 
-    # ── Parse prices ─────────────────────────────────────────────────────────
     print(f"\n  Parsing prices from post text…")
     updates = parse_prices(page_text, known_tickers)
 
@@ -309,7 +326,6 @@ def run():
 
     print(f"\n  Parsed {len(updates)} ticker(s) from post.")
 
-    # ── Merge and save ────────────────────────────────────────────────────────
     zones = load_zones()
     zones, changed = merge_updates(zones, updates, page_label)
 
