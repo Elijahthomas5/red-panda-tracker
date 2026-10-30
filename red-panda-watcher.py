@@ -47,19 +47,15 @@ def save_zones(data):
     print(f"  ✅ Saved {ZONES_PATH}")
 
 # ─── PRICE PARSER ────────────────────────────────────────────────────────────
-# Pull all stock tickers from current zones file so we know what to look for.
 def get_known_tickers():
     z = load_zones()
     return set(z.get("tickers", {}).keys())
 
-PRICE_RE   = re.compile(r'\$?([\d,]+\.?\d*)')   # matches $573.63 or 573.63
-TICKER_RE  = re.compile(r'\b([A-Z]{1,5})\b')     # word-boundary uppercase
+PRICE_RE   = re.compile(r'\$?([\d,]+\.?\d*)')
+TICKER_RE  = re.compile(r'\b([A-Z]{1,5})\b')
 
 
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
-    """
-    Parse free-form text into {TICKER: [ltb, swing, entry]} mapping.
-    """
     updates = {}
     lines   = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
 
@@ -81,9 +77,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
     for line in lines:
         if not line:
             continue
-
         line_lower = line.lower()
-
         first_word = line.split()[0].strip(":-/$.,")
         if first_word in known_tickers:
             flush()
@@ -91,7 +85,6 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
             remainder = line[len(first_word):].strip(":-/ \t")
             line = remainder
             line_lower = line.lower()
-
         if current_ticker is None:
             continue
 
@@ -113,7 +106,6 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         has_label = any(alias in line_lower
                         for aliases in [LTB_ALIASES, SWING_ALIASES, ENTRY_ALIASES]
                         for alias in aliases)
-
         prices_on_line = []
         for m in PRICE_RE.finditer(line):
             try:
@@ -122,7 +114,6 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
                     prices_on_line.append(val)
             except ValueError:
                 pass
-
         if not has_label:
             buf["unlabelled"].extend(prices_on_line)
 
@@ -163,7 +154,7 @@ def run():
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except ImportError:
-        print("⚠  Playwright not installed. Run: pip install playwright && playwright install chromium")
+        print("⚠  Playwright not installed.")
         sys.exit(1)
 
     known_tickers = get_known_tickers()
@@ -179,17 +170,20 @@ def run():
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/124.0.0.0 Safari/537.36"
             ),
             viewport={"width": 1280, "height": 900},
+            ignore_https_errors=True,
         )
         page = ctx.new_page()
 
         # ── Log into Kajabi ───────────────────────────────────────────────────
         print(f"  Logging in as {RP_EMAIL}…")
         try:
-            page.goto(KAJABI_LOGIN, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2000)
+            # Use load instead of domcontentloaded for better compatibility
+            page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
+            page.wait_for_timeout(3000)
+            print(f"  Login page loaded: {page.url}")
 
             email_sel = (
                 'input[name="member[email]"], '
@@ -206,29 +200,34 @@ def run():
                 'button[type="submit"]'
             )
 
-            page.wait_for_selector(email_sel, timeout=10000)
+            page.wait_for_selector(email_sel, timeout=20000)
             page.fill(email_sel, RP_EMAIL)
             page.fill(pw_sel, RP_PASSWORD)
             page.click(submit_sel)
-            page.wait_for_timeout(4000)
+            # Wait for navigation after login
+            try:
+                page.wait_for_url(lambda url: "login" not in url and "sign_in" not in url, timeout=20000)
+            except PWTimeout:
+                page.wait_for_timeout(5000)
 
             if "login" in page.url or "sign_in" in page.url:
                 print("  ⚠  Login may have failed — check RP_EMAIL / RP_PASSWORD secrets")
+                print(f"     Current URL: {page.url}")
                 browser.close()
                 sys.exit(1)
 
             print(f"  ✓ Logged in → {page.url}")
 
         except PWTimeout:
-            print("  ⚠  Login page timed out")
+            print(f"  ⚠  Login page timed out. Current URL: {page.url}")
             browser.close()
             sys.exit(1)
 
         # ── Find the latest prices post from the category page ───────────────
         print(f"  Loading category page to find latest prices post…")
         try:
-            page.goto(CATEGORY_URL, wait_until="networkidle", timeout=45000)
-            page.wait_for_timeout(3000)
+            page.goto(CATEGORY_URL, wait_until="load", timeout=60000)
+            page.wait_for_timeout(4000)
 
             post_links = page.query_selector_all("a[href*='/posts/']")
             print(f"  Found {len(post_links)} post links on category page")
@@ -272,7 +271,7 @@ def run():
         # ── Navigate to the prices post ───────────────────────────────────────
         print(f"  Navigating to prices post…")
         try:
-            page.goto(prices_url, wait_until="networkidle", timeout=45000)
+            page.goto(prices_url, wait_until="load", timeout=60000)
             page.wait_for_timeout(3000)
 
             try:
