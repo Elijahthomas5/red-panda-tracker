@@ -6,8 +6,10 @@ monthly price post, parses LTB / Swing / Entry zones for each ticker,
 and updates red-panda-zones.json.
 
 Runs via GitHub Actions (.github/workflows/rp-watcher.yml).
-Requires: RP_EMAIL + RP_PASSWORD as GitHub secrets.
-          pip install playwright playwright-stealth && playwright install chromium
+Requires GitHub secrets:
+  RP_COOKIES  — JSON array of Kajabi session cookies (primary auth method)
+  RP_EMAIL    — fallback if no cookies
+  RP_PASSWORD — fallback if no cookies
 """
 
 import json
@@ -22,14 +24,14 @@ ZONES_PATH  = os.path.join(BASE_DIR, 'red-panda-zones.json')
 
 RP_EMAIL    = os.environ.get("RP_EMAIL", "")
 RP_PASSWORD = os.environ.get("RP_PASSWORD", "")
+RP_COOKIES  = os.environ.get("RP_COOKIES", "")   # JSON array of cookie dicts
 
 KAJABI_LOGIN    = "https://redpandaacademy.mykajabi.com/login"
+KAJABI_HOME     = "https://redpandaacademy.mykajabi.com"
 CATEGORY_URL    = "https://redpandaacademy.mykajabi.com/products/red-panda-academy-stock-club-monthly/categories/2149257404"
 
-# Keywords that identify the monthly prices post (case-insensitive)
 PRICES_POST_KEYWORDS = ["price", "zone", "monthly", "ltb", "load the boat", "stock club"]
 
-# Label aliases the parser recognizes
 LTB_ALIASES   = {"ltb", "load the boat", "load", "l.t.b", "boat", "ltb zone"}
 SWING_ALIASES = {"swing", "swing trade", "swing zone", "s.t", "swing entry"}
 ENTRY_ALIASES = {"entry", "quick entry", "qe", "quick", "q.e", "entry zone"}
@@ -51,9 +53,7 @@ def get_known_tickers():
     z = load_zones()
     return set(z.get("tickers", {}).keys())
 
-PRICE_RE   = re.compile(r'\$?([\d,]+\.?\d*)')
-TICKER_RE  = re.compile(r'\b([A-Z]{1,5})\b')
-
+PRICE_RE = re.compile(r'\$?([\d,]+\.?\d*)')
 
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
     updates = {}
@@ -119,7 +119,6 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
     flush()
     return updates
 
-
 # ─── MERGE UPDATES INTO ZONES ────────────────────────────────────────────────
 def merge_updates(zones: dict, updates: dict, page_label: str) -> dict:
     changed = 0
@@ -135,33 +134,19 @@ def merge_updates(zones: dict, updates: dict, page_label: str) -> dict:
                 existing["prices"] = prices
                 print(f"  🔄 Updated {ticker}: {old} → {prices}")
                 changed += 1
-
     today = date.today()
     zones["_updated"] = today.strftime("%Y-%m-%d")
     zones["_label"]   = page_label or f"Ian Dunlap · Stock Club · {today.strftime('%b %d, %Y')}"
     print(f"\n  {changed} ticker(s) changed.")
     return zones, changed
 
-
 # ─── MAIN SCRAPER ────────────────────────────────────────────────────────────
 def run():
-    if not RP_EMAIL or not RP_PASSWORD:
-        print("⚠  RP_EMAIL / RP_PASSWORD not set.")
-        print("   GitHub → Settings → Secrets → add RP_EMAIL and RP_PASSWORD.")
-        sys.exit(0)
-
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except ImportError:
         print("⚠  Playwright not installed.")
         sys.exit(1)
-
-    try:
-        from playwright_stealth import stealth_sync
-        print("  ✓ playwright-stealth loaded")
-    except ImportError:
-        print("  ⚠  playwright-stealth not found — running without stealth")
-        stealth_sync = None
 
     known_tickers = get_known_tickers()
     print(f"\n🐼 Red Panda Watcher — {date.today()}")
@@ -173,11 +158,7 @@ def run():
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
             headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
         ctx = browser.new_context(
             user_agent=(
@@ -188,41 +169,38 @@ def run():
             viewport={"width": 1280, "height": 900},
             locale="en-US",
             timezone_id="America/New_York",
-            ignore_https_errors=True,
         )
         page = ctx.new_page()
 
-        # Apply stealth patches to avoid Cloudflare bot detection
-        if stealth_sync:
-            stealth_sync(page)
-            print("  ✓ Stealth patches applied")
+        # ── Auth: cookies first, password fallback ────────────────────────────
+        if RP_COOKIES:
+            print("  Loading session cookies…")
+            try:
+                cookies = json.loads(RP_COOKIES)
+                ctx.add_cookies(cookies)
+                print(f"  ✓ Loaded {len(cookies)} cookies")
 
-        # ── Log into Kajabi ───────────────────────────────────────────────────
-        print(f"  Logging in as {RP_EMAIL}…")
-        try:
-            page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
-            # Extra wait — Cloudflare Turnstile needs time to pass
-            page.wait_for_timeout(5000)
-            print(f"  Login page loaded: {page.url}")
+                # Verify the session is still valid
+                page.goto(KAJABI_HOME, wait_until="load", timeout=30000)
+                page.wait_for_timeout(2000)
+                if "login" in page.url or "sign_in" in page.url:
+                    print("  ⚠  Cookies expired — please refresh RP_COOKIES secret")
+                    browser.close()
+                    sys.exit(1)
+                print(f"  ✓ Session valid → {page.url}")
+            except Exception as e:
+                print(f"  ⚠  Cookie load failed: {e}")
+                browser.close()
+                sys.exit(1)
 
-            email_el = (
-                page.query_selector('input[type="email"]') or
-                page.query_selector('input[name*="email"]') or
-                page.query_selector('input[id*="email"]') or
-                page.query_selector('input[placeholder*="email" i]') or
-                page.query_selector('input[autocomplete="email"]')
-            )
-            pw_el = (
-                page.query_selector('input[type="password"]') or
-                page.query_selector('input[name*="password"]') or
-                page.query_selector('input[id*="password"]') or
-                page.query_selector('input[autocomplete="current-password"]')
-            )
+        elif RP_EMAIL and RP_PASSWORD:
+            print(f"  Logging in as {RP_EMAIL} (password mode)…")
+            print("  ⚠  WARNING: Kajabi login page is protected by Cloudflare.")
+            print("     If this fails, set RP_COOKIES secret instead.")
+            try:
+                page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
+                page.wait_for_timeout(5000)
 
-            if not email_el or not pw_el:
-                # Cloudflare may still be loading — wait longer and retry
-                print("  Form not ready, waiting for Cloudflare to clear…")
-                page.wait_for_timeout(10000)
                 email_el = (
                     page.query_selector('input[type="email"]') or
                     page.query_selector('input[name*="email"]') or
@@ -233,42 +211,43 @@ def run():
                     page.query_selector('input[name*="password"]')
                 )
 
-            if not email_el or not pw_el:
-                print("  ⚠  Login form not found after waiting. Page text:")
-                print("     " + page.inner_text("body")[:600].replace("\n", "\n     "))
-                browser.close()
-                sys.exit(1)
+                if not email_el or not pw_el:
+                    print("  ⚠  Login form blocked by Cloudflare bot protection.")
+                    print("     Add RP_COOKIES secret to bypass this.")
+                    browser.close()
+                    sys.exit(1)
 
-            email_el.fill(RP_EMAIL)
-            pw_el.fill(RP_PASSWORD)
-            pw_el.press("Enter")
+                email_el.fill(RP_EMAIL)
+                pw_el.fill(RP_PASSWORD)
+                pw_el.press("Enter")
+                try:
+                    page.wait_for_url(lambda url: "login" not in url, timeout=20000)
+                except PWTimeout:
+                    page.wait_for_timeout(5000)
 
-            try:
-                page.wait_for_url(lambda url: "login" not in url and "sign_in" not in url, timeout=20000)
+                if "login" in page.url:
+                    print("  ⚠  Login failed — check RP_EMAIL / RP_PASSWORD")
+                    browser.close()
+                    sys.exit(1)
+                print(f"  ✓ Logged in → {page.url}")
             except PWTimeout:
-                page.wait_for_timeout(5000)
-
-            if "login" in page.url or "sign_in" in page.url:
-                print("  ⚠  Login may have failed — check RP_EMAIL / RP_PASSWORD secrets")
-                print(f"     Current URL: {page.url}")
+                print(f"  ⚠  Login timed out. Current URL: {page.url}")
                 browser.close()
                 sys.exit(1)
 
-            print(f"  ✓ Logged in → {page.url}")
+        else:
+            print("⚠  No auth configured.")
+            print("   Add RP_COOKIES secret (recommended) or RP_EMAIL + RP_PASSWORD.")
+            sys.exit(0)
 
-        except PWTimeout:
-            print(f"  ⚠  Login timed out. Current URL: {page.url}")
-            browser.close()
-            sys.exit(1)
-
-        # ── Find the latest prices post from the category page ───────────────
-        print(f"  Loading category page to find latest prices post…")
+        # ── Find latest prices post from category page ────────────────────────
+        print(f"  Loading category page…")
         try:
             page.goto(CATEGORY_URL, wait_until="load", timeout=60000)
             page.wait_for_timeout(4000)
 
             post_links = page.query_selector_all("a[href*='/posts/']")
-            print(f"  Found {len(post_links)} post links on category page")
+            print(f"  Found {len(post_links)} post links")
 
             prices_url = None
             for link in post_links:
@@ -279,25 +258,21 @@ def run():
                         if "http" not in href:
                             href = "https://redpandaacademy.mykajabi.com" + href
                         prices_url = href
-                        print(f"  ✓ Found prices post by keyword: {link.inner_text().strip()}")
+                        print(f"  ✓ Found prices post: {link.inner_text().strip()}")
                         print(f"    → {prices_url}")
                         break
                 except:
                     pass
 
             if not prices_url and post_links:
-                try:
-                    href = post_links[0].get_attribute("href") or ""
-                    if "http" not in href:
-                        href = "https://redpandaacademy.mykajabi.com" + href
-                    prices_url = href
-                    print(f"  ⚠  No keyword match — using first post: {prices_url}")
-                except:
-                    pass
+                href = post_links[0].get_attribute("href") or ""
+                if "http" not in href:
+                    href = "https://redpandaacademy.mykajabi.com" + href
+                prices_url = href
+                print(f"  ⚠  No keyword match — using first post: {prices_url}")
 
             if not prices_url:
-                print("  ⚠  Could not find any post links on category page.")
-                print(f"     Page URL: {page.url}")
+                print(f"  ⚠  No post links found. URL: {page.url}")
                 browser.close()
                 sys.exit(1)
 
@@ -306,7 +281,7 @@ def run():
             browser.close()
             sys.exit(1)
 
-        # ── Navigate to the prices post ───────────────────────────────────────
+        # ── Navigate to prices post ───────────────────────────────────────────
         print(f"  Navigating to prices post…")
         try:
             page.goto(prices_url, wait_until="load", timeout=60000)
@@ -319,50 +294,39 @@ def run():
             except:
                 pass
 
-            content_selectors = [
-                ".fr-view",
-                ".post-body",
-                ".post-content",
-                ".lesson-content",
-                "article .content",
-                "[data-post-content]",
-                ".prose",
-                "article",
-                "main",
-            ]
-            for sel in content_selectors:
+            for sel in [".fr-view", ".post-body", ".post-content", ".lesson-content",
+                        "article .content", "[data-post-content]", ".prose", "article", "main"]:
                 el = page.query_selector(sel)
                 if el:
                     page_text = el.inner_text()
-                    print(f"  ✓ Got content via selector: {sel} ({len(page_text)} chars)")
+                    print(f"  ✓ Got content via {sel} ({len(page_text)} chars)")
                     break
 
             if not page_text:
                 page_text = page.inner_text("body")
-                print(f"  ⚠  Using full body text ({len(page_text)} chars)")
+                print(f"  ⚠  Using full body ({len(page_text)} chars)")
 
         except PWTimeout:
-            print("  ⚠  Price post page timed out")
+            print("  ⚠  Price post timed out")
             browser.close()
             sys.exit(1)
 
         browser.close()
 
     if not page_text.strip():
-        print("  ⚠  No text extracted from page — aborting.")
+        print("  ⚠  No text extracted — aborting.")
         sys.exit(1)
 
-    print(f"\n  Parsing prices from post text…")
+    print(f"\n  Parsing prices…")
     updates = parse_prices(page_text, known_tickers)
 
     if not updates:
-        print("  ⚠  No ticker prices found in post. The format may have changed.")
-        print("     First 500 chars of page text:")
+        print("  ⚠  No ticker prices found. Format may have changed.")
+        print("     First 500 chars:")
         print("     " + page_text[:500].replace("\n", "\n     "))
         sys.exit(0)
 
-    print(f"\n  Parsed {len(updates)} ticker(s) from post.")
-
+    print(f"\n  Parsed {len(updates)} ticker(s).")
     zones = load_zones()
     zones, changed = merge_updates(zones, updates, page_label)
 
@@ -370,10 +334,9 @@ def run():
         save_zones(zones)
         print(f"\n✅ red-panda-zones.json updated ({changed} change(s)).")
     else:
-        print("\n✓ No price changes — zones already up to date.")
+        print("\n✓ No price changes — already up to date.")
 
     sys.exit(0)
-
 
 if __name__ == "__main__":
     run()
