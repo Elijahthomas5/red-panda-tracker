@@ -7,7 +7,7 @@ and updates red-panda-zones.json.
 
 Runs via GitHub Actions (.github/workflows/rp-watcher.yml).
 Requires: RP_EMAIL + RP_PASSWORD as GitHub secrets.
-          pip install playwright && playwright install chromium
+          pip install playwright playwright-stealth && playwright install chromium
 """
 
 import json
@@ -156,6 +156,13 @@ def run():
         print("⚠  Playwright not installed.")
         sys.exit(1)
 
+    try:
+        from playwright_stealth import stealth_sync
+        print("  ✓ playwright-stealth loaded")
+    except ImportError:
+        print("  ⚠  playwright-stealth not found — running without stealth")
+        stealth_sync = None
+
     known_tickers = get_known_tickers()
     print(f"\n🐼 Red Panda Watcher — {date.today()}")
     print(f"   Tracking {len(known_tickers)} tickers\n")
@@ -164,7 +171,14 @@ def run():
     page_label = ""
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
         ctx = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -172,30 +186,25 @@ def run():
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             viewport={"width": 1280, "height": 900},
+            locale="en-US",
+            timezone_id="America/New_York",
             ignore_https_errors=True,
         )
         page = ctx.new_page()
+
+        # Apply stealth patches to avoid Cloudflare bot detection
+        if stealth_sync:
+            stealth_sync(page)
+            print("  ✓ Stealth patches applied")
 
         # ── Log into Kajabi ───────────────────────────────────────────────────
         print(f"  Logging in as {RP_EMAIL}…")
         try:
             page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
-            page.wait_for_timeout(3000)
+            # Extra wait — Cloudflare Turnstile needs time to pass
+            page.wait_for_timeout(5000)
             print(f"  Login page loaded: {page.url}")
 
-            # Diagnose what inputs are present
-            inputs = page.query_selector_all("input")
-            print(f"  Input fields found: {len(inputs)}")
-            for inp in inputs[:10]:
-                try:
-                    itype = inp.get_attribute("type") or "text"
-                    iname = inp.get_attribute("name") or ""
-                    iid   = inp.get_attribute("id") or ""
-                    print(f"    input type={itype} name={iname} id={iid}")
-                except:
-                    pass
-
-            # Try broad selectors — any email or password field
             email_el = (
                 page.query_selector('input[type="email"]') or
                 page.query_selector('input[name*="email"]') or
@@ -209,32 +218,31 @@ def run():
                 page.query_selector('input[id*="password"]') or
                 page.query_selector('input[autocomplete="current-password"]')
             )
-            submit_el = (
-                page.query_selector('button[type="submit"]') or
-                page.query_selector('input[type="submit"]') or
-                page.query_selector('button:has-text("Sign in")') or
-                page.query_selector('button:has-text("Log in")')
-            )
-
-            print(f"  email_el found: {email_el is not None}")
-            print(f"  pw_el found: {pw_el is not None}")
-            print(f"  submit_el found: {submit_el is not None}")
 
             if not email_el or not pw_el:
-                print("  ⚠  Could not find login form fields. Page HTML snippet:")
-                body_text = page.inner_text("body")
-                print("     " + body_text[:800].replace("\n", "\n     "))
+                # Cloudflare may still be loading — wait longer and retry
+                print("  Form not ready, waiting for Cloudflare to clear…")
+                page.wait_for_timeout(10000)
+                email_el = (
+                    page.query_selector('input[type="email"]') or
+                    page.query_selector('input[name*="email"]') or
+                    page.query_selector('input[id*="email"]')
+                )
+                pw_el = (
+                    page.query_selector('input[type="password"]') or
+                    page.query_selector('input[name*="password"]')
+                )
+
+            if not email_el or not pw_el:
+                print("  ⚠  Login form not found after waiting. Page text:")
+                print("     " + page.inner_text("body")[:600].replace("\n", "\n     "))
                 browser.close()
                 sys.exit(1)
 
             email_el.fill(RP_EMAIL)
             pw_el.fill(RP_PASSWORD)
-            if submit_el:
-                submit_el.click()
-            else:
-                pw_el.press("Enter")
+            pw_el.press("Enter")
 
-            # Wait for navigation away from login page
             try:
                 page.wait_for_url(lambda url: "login" not in url and "sign_in" not in url, timeout=20000)
             except PWTimeout:
