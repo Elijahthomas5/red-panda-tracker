@@ -13,11 +13,7 @@
     },
     "AAPL": {
       "name": "Apple",
-      "prices": [
-        2026.0,
-        null,
-        null
-      ]
+      "prices": [263.29, 299.91, 311.42]
     },
     "MSFT": {
       "name": "Microsoft",
