@@ -163,7 +163,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         for m in PRICE_RE.finditer(line):
             try:
                 val = float(m.group(1).replace(",", ""))
-                if val > 0:
+                if val > 0 and not (1900 <= val <= 2100):
                     prices_on_line.append(val)
             except ValueError:
                 pass
