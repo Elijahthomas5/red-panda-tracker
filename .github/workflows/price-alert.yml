@@ -1,0 +1,29 @@
+name: Red Panda Price Alert
+on:
+  schedule:
+    - cron: '*/15 13-20 * * 1-5'  # Every 15 min, 9am-4pm ET (13-20 UTC), weekdays only
+  workflow_dispatch:
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install yfinance requests
+      - name: Check prices and alert
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python price-alert.py
+      - name: Save alert state
+        run: |
+          git config user.name "Red Panda Bot"
+          git config user.email "bot@red-panda-tracker.local"
+          git add price-alert-state.json
+          git diff --staged --quiet && exit 0
+          git commit -m "alert: update price alert state"
+          git push
