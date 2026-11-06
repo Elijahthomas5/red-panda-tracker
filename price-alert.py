@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Red Panda Price Alert — Zone Checker
-Fetches live stock prices and sends a single bundled push notification via ntfy.sh
+Fetches live stock prices and sends a bundled push notification via ntfy.sh
 when any stocks touch the LTB / Swing / Entry zone from Ian's post.
 
 Runs via GitHub Actions every 15 min during market hours.
@@ -17,10 +17,10 @@ from pathlib import Path
 ZONES_PATH  = "red-panda-zones.json"
 STATE_PATH  = "price-alert-state.json"
 NTFY_TOPIC  = os.environ.get("NTFY_TOPIC", "")
-COOLDOWN_HOURS = 6   # don't re-alert same ticker+zone within this many hours
+COOLDOWN_HOURS = 6
 
-ZONE_KEYS   = ["ltb", "swing", "entry"]
-ZONE_NAMES  = {"ltb": "Load the Boat 🚢", "swing": "Swing Trade 📈", "entry": "Quick Entry ⚡"}
+ZONE_KEYS     = ["ltb", "swing", "entry"]
+ZONE_NAMES    = {"ltb": "Load the Boat 🚢", "swing": "Swing 📈", "entry": "Entry ⚡"}
 ZONE_PRIORITY = {"ltb": "high", "swing": "default", "entry": "default"}
 
 # ─── STATE ───────────────────────────────────────────────────────────────────
@@ -46,29 +46,43 @@ def on_cooldown(state, key):
 
 # ─── NOTIFY ──────────────────────────────────────────────────────────────────
 def notify_bundled(alerts: list):
-    """Send one notification listing all triggered stocks."""
+    """Send one compact notification. Prioritises LTB > Swing > Entry.
+    Keeps message under ntfy's 4096-byte limit."""
     if not alerts:
         return
 
-    priorities = [ZONE_PRIORITY[a["zone"]] for a in alerts]
-    priority = 4 if "high" in priorities else 3
+    # Sort: LTB first, then swing, then entry
+    sorted_alerts = sorted(alerts, key=lambda x: ZONE_KEYS.index(x["zone"]))
 
-    title = f"🐼 Red Panda Alert — {len(alerts)} stock{'s' if len(alerts) > 1 else ''} in zone"
+    priority = 4 if any(a["zone"] == "ltb" for a in alerts) else 3
 
+    # Count by zone type
+    ltb_count   = sum(1 for a in alerts if a["zone"] == "ltb")
+    swing_count = sum(1 for a in alerts if a["zone"] == "swing")
+    entry_count = sum(1 for a in alerts if a["zone"] == "entry")
+
+    parts = []
+    if ltb_count:   parts.append(f"{ltb_count} LTB")
+    if swing_count: parts.append(f"{swing_count} Swing")
+    if entry_count: parts.append(f"{entry_count} Entry")
+    title = f"🐼 Red Panda — {', '.join(parts)} ({len(alerts)} total)"
+
+    # Build compact lines — ticker + zone label only, up to ~20 shown
     lines = []
-    for a in sorted(alerts, key=lambda x: ZONE_KEYS.index(x["zone"])):
-        pct_str = f"{a['pct']:+.1f}%" if abs(a['pct']) > 0.05 else "right at zone"
-        lines.append(f"{a['ticker']} ${a['price']:,.2f} — {ZONE_NAMES[a['zone']]} (target ${a['zone_price']:,.2f}, {pct_str})")
+    for a in sorted_alerts[:20]:
+        lines.append(f"{a['ticker']} ${a['price']:,.2f} → {ZONE_NAMES[a['zone']]}")
+    if len(alerts) > 20:
+        lines.append(f"... and {len(alerts) - 20} more")
 
     message = "\n".join(lines)
 
     if not NTFY_TOPIC:
-        print(f"  [no NTFY_TOPIC set]\n  {title}\n  {message}")
+        print(f"  [no NTFY_TOPIC set]\n  {title}")
         return
 
     try:
         import requests
-        requests.post(
+        r = requests.post(
             "https://ntfy.sh",
             json={
                 "topic":    NTFY_TOPIC,
@@ -79,16 +93,15 @@ def notify_bundled(alerts: list):
                 "click":    "https://elijahthomas5.github.io/red-panda-tracker/",
             },
             timeout=10,
-        ).raise_for_status()
-        print(f"  ✓ Sent bundled alert: {title}")
+        )
+        r.raise_for_status()
+        print(f"  ✓ Sent: {title}")
     except Exception as e:
         print(f"  ⚠  ntfy failed: {e}")
 
 # ─── PRICES ──────────────────────────────────────────────────────────────────
 def fetch_prices(tickers: list) -> dict:
-    """Fetch latest intraday price for each ticker via yfinance."""
     import yfinance as yf
-
     prices = {}
     raw = yf.download(
         tickers,
@@ -98,7 +111,6 @@ def fetch_prices(tickers: list) -> dict:
         progress=False,
         group_by="ticker",
     )
-
     if len(tickers) == 1:
         t = tickers[0]
         try:
@@ -115,7 +127,6 @@ def fetch_prices(tickers: list) -> dict:
                     prices[t] = round(float(series.iloc[-1]), 2)
             except Exception:
                 pass
-
     return prices
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
@@ -175,9 +186,7 @@ def run():
                 continue
 
             state_key = f"{ticker}_{zone_key}"
-
             if on_cooldown(state, state_key):
-                print(f"  ⏳ {ticker} {zone_key} — in zone but on cooldown, skipping")
                 continue
 
             pct = ((price - zone_price) / zone_price) * 100
@@ -193,9 +202,7 @@ def run():
             state_changed = True
 
     if alerts_to_fire:
-        print(f"\n  {len(alerts_to_fire)} alert(s) to send:")
-        for a in alerts_to_fire:
-            print(f"    {a['ticker']} ${a['price']:,.2f} → {ZONE_NAMES[a['zone']]}")
+        print(f"\n  {len(alerts_to_fire)} alert(s) to send")
         notify_bundled(alerts_to_fire)
     else:
         print("  No stocks in zone (or all on cooldown).")
