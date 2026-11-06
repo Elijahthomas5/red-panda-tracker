@@ -735,7 +735,7 @@ function renderTable() {
     else if (zone === 'swing') liveCellClass += 'at-swing';
     else if (zone === 'entry') liveCellClass += 'at-entry';
     else liveCellClass += 'above';
-    const liveDisplay = live === null ? (getTradierKey() ? 'loading…' : 'no key') : `$${live.toFixed(2)}`;
+    const liveDisplay = live === null ? '—' : `$${live.toFixed(2)}`;
 
     // Distance
     let distHtml = '<span class="dist">—</span>';
@@ -873,5 +873,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 window.addEventListener('resize', fixStickyOffsets);
 </script>
+<script src="live-prices-loader.js"></script>
 </body>
 </html>
