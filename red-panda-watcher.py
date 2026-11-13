@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """
 Red Panda Zone Watcher — Kajabi Scraper
 Logs into Red Panda Academy on Kajabi, reads Ian Dunlap's Stock Club
