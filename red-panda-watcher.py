@@ -148,7 +148,8 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
                 if m:
                     try:
                         val = float(m.group(1).replace(",", ""))
-                        buf[slot] = val
+                        if val >= 5 and not (2020 <= val <= 2029 and val == int(val)):
+                            buf[slot] = val
                     except ValueError:
                         pass
 
@@ -163,7 +164,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         for m in PRICE_RE.finditer(line):
             try:
                 val = float(m.group(1).replace(",", ""))
-                if val > 0:
+                if val >= 5 and not (2020 <= val <= 2029 and val == int(val)):
                     prices_on_line.append(val)
             except ValueError:
                 pass
