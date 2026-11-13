@@ -14,13 +14,11 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install playwright requests PyNaCl && playwright install chromium --with-deps
+        run: pip install playwright playwright-stealth requests && playwright install chromium --with-deps
       - name: Run Red Panda price scraper
         env:
-          RP_EMAIL:    ${{ secrets.RP_EMAIL }}
+          RP_EMAIL: ${{ secrets.RP_EMAIL }}
           RP_PASSWORD: ${{ secrets.RP_PASSWORD }}
-          RP_COOKIES:  ${{ secrets.RP_COOKIES }}
-          GH_PAT:      ${{ secrets.GH_PAT }}
         run: python red-panda-watcher.py
       - name: Commit updated zones
         run: |
