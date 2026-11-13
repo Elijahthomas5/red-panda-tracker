@@ -109,67 +109,64 @@ def get_known_tickers():
 
 PRICE_RE = re.compile(r'\$([\d,]+\.?\d*)')
 
+def is_valid_price(val: float) -> bool:
+    """Filter out list-number artifacts ($1, $2) and year-shaped values (2026)."""
+    if val < 5:
+        return False
+    if 2020 <= val <= 2029 and val == int(val):
+        return False
+    return True
+
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
+    """
+    Positional parser: for each ticker, grab the next 1–3 dollar prices in order.
+    Position 1 = Load the Boat, 2 = Swing Trade, 3 = Quick Entry.
+    Matches Ian's post format: TICKER \n $ltb \n $swing \n $entry \n NEXT_TICKER
+    """
     updates = {}
     lines = [l.strip() for l in raw_text.replace("\r", "\n").split("\n")]
     current_ticker = None
-    buf = {"ltb": None, "swing": None, "entry": None, "unlabelled": []}
+    prices_buf = []
 
     def flush():
-        nonlocal buf
-        if not current_ticker:
+        nonlocal current_ticker, prices_buf
+        if not current_ticker or not prices_buf:
+            current_ticker = None
+            prices_buf = []
             return
-        for slot in ["ltb", "swing", "entry"]:
-            if buf[slot] is None and buf["unlabelled"]:
-                buf[slot] = buf["unlabelled"].pop(0)
-        if any(buf[k] is not None for k in ["ltb", "swing", "entry"]):
-            updates[current_ticker] = [buf["ltb"], buf["swing"], buf["entry"]]
-            print(f"  {current_ticker}: {updates[current_ticker]}")
-        buf = {"ltb": None, "swing": None, "entry": None, "unlabelled": []}
+        while len(prices_buf) < 3:
+            prices_buf.append(None)
+        updates[current_ticker] = prices_buf[:3]
+        print(f"  {current_ticker}: {updates[current_ticker]}")
+        current_ticker = None
+        prices_buf = []
 
     for line in lines:
         if not line:
             continue
-        line_lower = line.lower()
         first_word = line.split()[0].strip(":-/$.,")
         if first_word in known_tickers:
             flush()
             current_ticker = first_word
-            remainder = line[len(first_word):].strip(":-/ \t")
-            line = remainder
-            line_lower = line.lower()
-        if current_ticker is None:
-            continue
-
-        def try_labelled(aliases, slot):
-            for alias in aliases:
-                pat = rf'(?i)\b{re.escape(alias)}\b[\s:–-]*\$?([\d,]+\.?\d*)'
-                m = re.search(pat, line)
-                if m:
-                    try:
-                        val = float(m.group(1).replace(",", ""))
-                        if val >= 5 and not (2020 <= val <= 2029 and val == int(val)):
-                            buf[slot] = val
-                    except ValueError:
-                        pass
-
-        try_labelled(LTB_ALIASES, "ltb")
-        try_labelled(SWING_ALIASES, "swing")
-        try_labelled(ENTRY_ALIASES, "entry")
-
-        has_label = any(alias in line_lower
-                        for aliases in [LTB_ALIASES, SWING_ALIASES, ENTRY_ALIASES]
-                        for alias in aliases)
-        prices_on_line = []
-        for m in PRICE_RE.finditer(line):
-            try:
-                val = float(m.group(1).replace(",", ""))
-                if val >= 5 and not (2020 <= val <= 2029 and val == int(val)):
-                    prices_on_line.append(val)
-            except ValueError:
-                pass
-        if not has_label:
-            buf["unlabelled"].extend(prices_on_line)
+            # Prices on the same line as the ticker (e.g. "NVDA $122 $195 $210")
+            remainder = line[len(first_word):]
+            for m in PRICE_RE.finditer(remainder):
+                try:
+                    val = float(m.group(1).replace(",", ""))
+                    if is_valid_price(val) and len(prices_buf) < 3:
+                        prices_buf.append(val)
+                except ValueError:
+                    pass
+        elif current_ticker is not None:
+            if len(prices_buf) >= 3:
+                continue  # already have all three — wait for next ticker
+            for m in PRICE_RE.finditer(line):
+                try:
+                    val = float(m.group(1).replace(",", ""))
+                    if is_valid_price(val) and len(prices_buf) < 3:
+                        prices_buf.append(val)
+                except ValueError:
+                    pass
 
     flush()
     return updates
