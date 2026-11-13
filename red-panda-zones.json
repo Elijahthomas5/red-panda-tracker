@@ -1,7 +1,7 @@
 {
   "_updated": "2026-10-22",
   "_label": "Red Panda Academy Stock Club - Monthly Prices",
-  "_note": "Edit this file and push to update zone prices in the tracker. Format: [loadTheBoat, swingTrade, quickEntry] \u2014 use null if not provided.",
+  "_note": "Edit this file and push to update zone prices in the tracker. Format: [loadTheBoat, swingTrade, quickEntry] — use null if not provided.",
   "tickers": {
     "VOO": {
       "name": "Vanguard S&P 500",
@@ -13,7 +13,11 @@
     },
     "AAPL": {
       "name": "Apple",
-      "prices": [263.29, 299.91, 311.42]
+      "prices": [
+        263.29,
+        299.91,
+        311.42
+      ]
     },
     "MSFT": {
       "name": "Microsoft",
@@ -42,9 +46,9 @@
     "AMD": {
       "name": "AMD",
       "prices": [
-        1.0,
+        null,
         312.76,
-        2.0
+        null
       ]
     },
     "LLY": {
@@ -66,9 +70,9 @@
     "XOM": {
       "name": "ExxonMobil",
       "prices": [
-        1.0,
+        null,
         94.2,
-        2.0
+        null
       ]
     },
     "IREN": {
@@ -92,7 +96,7 @@
       "prices": [
         281.51,
         296.5,
-        309.0
+        309
       ]
     },
     "TMUS": {
@@ -106,9 +110,9 @@
     "XLV": {
       "name": "Health Care ETF",
       "prices": [
-        1.0,
+        null,
         128.21,
-        2.0
+        null
       ]
     },
     "HD": {
@@ -130,9 +134,9 @@
     "PANW": {
       "name": "Palo Alto Networks",
       "prices": [
-        1.0,
+        null,
         159.7,
-        2.0
+        null
       ]
     },
     "NBIS": {
@@ -146,9 +150,9 @@
     "JKHY": {
       "name": "Jack Henry & Assoc",
       "prices": [
-        1.0,
+        null,
         99.93,
-        2.0
+        null
       ]
     },
     "WMT": {
@@ -323,14 +327,14 @@
       "name": "CME Group",
       "prices": [
         142.87,
-        228.0,
+        228,
         258.91
       ]
     },
     "MS": {
       "name": "Morgan Stanley",
       "prices": [
-        2026.0,
+        null,
         null,
         null
       ]
@@ -499,7 +503,7 @@
       "name": "Marvell Technology",
       "prices": [
         106.89,
-        238.0,
+        238,
         251.82
       ]
     },
@@ -508,7 +512,7 @@
       "prices": [
         270.08,
         373.92,
-        394.0
+        394
       ]
     },
     "CDNS": {
