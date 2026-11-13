@@ -1,4 +1,4 @@
-# #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Red Panda Zone Watcher — Kajabi Scraper
 Logs into Red Panda Academy on Kajabi, reads Ian Dunlap's Stock Club
@@ -7,8 +7,8 @@ and updates red-panda-zones.json.
 
 Runs via GitHub Actions (.github/workflows/rp-watcher.yml).
 Requires GitHub secrets:
-RP_EMAIL    — Kajabi account email
-RP_PASSWORD — Kajabi account password
+  RP_EMAIL    -- Kajabi account email
+  RP_PASSWORD -- Kajabi account password
 """
 
 import json
@@ -17,7 +17,7 @@ import re
 import sys
 from datetime import date
 
-# ─── CONFIG ──────────────────────────────────────────────────────────────────
+# --- CONFIG ------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ZONES_PATH = os.path.join(BASE_DIR, 'red-panda-zones.json')
 
@@ -27,10 +27,26 @@ RP_PASSWORD = os.environ.get("RP_PASSWORD", "")
 KAJABI_LOGIN = "https://redpandaacademy.mykajabi.com/login"
 KAJABI_HOME  = "https://redpandaacademy.mykajabi.com"
 CATEGORY_URL = "https://redpandaacademy.mykajabi.com/products/red-panda-academy-stock-club-monthly/categories/2149257404"
-
 PRICES_POST_KEYWORDS = ["price", "zone", "monthly", "ltb", "load the boat", "stock club"]
 
-# ─── LOAD / SAVE ZONES ───────────────────────────────────────────────────────
+# JavaScript injected on every page load to mask headless Chromium signals.
+# Replaces playwright-stealth with zero external dependencies.
+STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+window.chrome = {runtime: {}};
+Object.defineProperty(navigator, 'platform', {get: () => 'MacIntel'});
+Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+  if (parameter === 37445) return 'Intel Inc.';
+  if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+  return getParameter.call(this, parameter);
+};
+"""
+
+# --- LOAD / SAVE ZONES -------------------------------------------------------
 def load_zones():
     if not os.path.exists(ZONES_PATH):
         return {"_updated": "", "_label": "", "_note": "", "tickers": {}}
@@ -40,14 +56,14 @@ def load_zones():
 def save_zones(data):
     with open(ZONES_PATH, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"  ✅ Saved {ZONES_PATH}")
+    print(f"  Saved {ZONES_PATH}")
 
-# ─── PRICE PARSER ────────────────────────────────────────────────────────────
+# --- PRICE PARSER ------------------------------------------------------------
 def get_known_tickers():
     z = load_zones()
     return set(z.get("tickers", {}).keys())
 
-PRICE_RE = re.compile(r'\$([\d,]+\.?\d*)')
+PRICE_RE = re.compile(r'\$(\d[\d,]*\.?\d*)')
 
 def is_valid_price(val: float) -> bool:
     """Filter out list-number artifacts ($1, $2) and year-shaped values (2026)."""
@@ -59,7 +75,7 @@ def is_valid_price(val: float) -> bool:
 
 def parse_prices(raw_text: str, known_tickers: set) -> dict:
     """
-    Positional parser: for each ticker, grab the next 1–3 dollar prices in order.
+    Positional parser: for each ticker, grab the next 1-3 dollar prices in order.
     Position 1 = Load the Boat, 2 = Swing Trade, 3 = Quick Entry.
     Matches Ian's post format: TICKER \n $ltb \n $swing \n $entry \n NEXT_TICKER
     """
@@ -88,7 +104,6 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
         if first_word in known_tickers:
             flush()
             current_ticker = first_word
-            # Prices on the same line as the ticker (e.g. "NVDA $122 $195 $210")
             remainder = line[len(first_word):]
             for m in PRICE_RE.finditer(remainder):
                 try:
@@ -99,7 +114,7 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
                     pass
         elif current_ticker is not None:
             if len(prices_buf) >= 3:
-                continue  # already have all three — wait for next ticker
+                continue
             for m in PRICE_RE.finditer(line):
                 try:
                     val = float(m.group(1).replace(",", ""))
@@ -111,45 +126,44 @@ def parse_prices(raw_text: str, known_tickers: set) -> dict:
     flush()
     return updates
 
-# ─── MERGE UPDATES INTO ZONES ────────────────────────────────────────────────
+# --- MERGE UPDATES INTO ZONES ------------------------------------------------
 def merge_updates(zones: dict, updates: dict, page_label: str) -> dict:
     changed = 0
     for ticker, prices in updates.items():
         existing = zones["tickers"].get(ticker)
         if existing is None:
             zones["tickers"][ticker] = {"name": ticker, "prices": prices}
-            print(f"  ➕ New ticker added: {ticker}")
+            print(f"  New ticker added: {ticker}")
             changed += 1
         else:
             old = existing.get("prices", [None, None, None])
             if old != prices:
                 existing["prices"] = prices
-                print(f"  🔄 Updated {ticker}: {old} → {prices}")
+                print(f"  Updated {ticker}: {old} -> {prices}")
                 changed += 1
     today = date.today()
     zones["_updated"] = today.strftime("%Y-%m-%d")
-    zones["_label"]   = page_label or f"Ian Dunlap · Stock Club · {today.strftime('%b %d, %Y')}"
+    zones["_label"] = page_label or f"Ian Dunlap Stock Club {today.strftime('%b %d, %Y')}"
     print(f"\n  {changed} ticker(s) changed.")
     return zones, changed
 
-# ─── MAIN SCRAPER ────────────────────────────────────────────────────────────
+# --- MAIN SCRAPER ------------------------------------------------------------
 def run():
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-        from playwright_stealth import stealth_sync
     except ImportError:
-        print("⚠ playwright and playwright-stealth are required.")
+        print("playwright is required. Run: pip install playwright && playwright install chromium")
         sys.exit(1)
 
     if not RP_EMAIL or not RP_PASSWORD:
-        print("⚠ RP_EMAIL and RP_PASSWORD secrets are required.")
+        print("RP_EMAIL and RP_PASSWORD secrets are required.")
         sys.exit(1)
 
     known_tickers = get_known_tickers()
-    print(f"\n🐼 Red Panda Watcher — {date.today()}")
-    print(f"   Tracking {len(known_tickers)} tickers\n")
+    print(f"\nRed Panda Watcher - {date.today()}")
+    print(f"  Tracking {len(known_tickers)} tickers\n")
 
-    page_text  = ""
+    page_text = ""
     page_label = ""
 
     with sync_playwright() as pw:
@@ -168,10 +182,10 @@ def run():
             timezone_id="America/New_York",
         )
         page = ctx.new_page()
-        stealth_sync(page)   # mask headless signals — bypasses Cloudflare
+        page.add_init_script(STEALTH_JS)  # mask headless signals, no external deps needed
 
-        # ── Login ──────────────────────────────────────────────────────────
-        print(f"   Logging in as {RP_EMAIL}…")
+        # --- Login -----------------------------------------------------------
+        print(f"  Logging in as {RP_EMAIL}...")
         try:
             page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
             page.wait_for_timeout(4000)
@@ -187,7 +201,7 @@ def run():
             )
 
             if not email_el or not pw_el:
-                print("   ⚠ Login form not found — Cloudflare may still be blocking.")
+                print("  Login form not found -- Cloudflare may still be blocking.")
                 browser.close()
                 sys.exit(1)
 
@@ -201,24 +215,24 @@ def run():
                 page.wait_for_timeout(5000)
 
             if "login" in page.url:
-                print("   ⚠ Login failed — check RP_EMAIL / RP_PASSWORD secrets.")
+                print("  Login failed -- check RP_EMAIL / RP_PASSWORD secrets.")
                 browser.close()
                 sys.exit(1)
-            print(f"   ✓ Logged in → {page.url}")
+            print(f"  Logged in -> {page.url}")
 
         except PWTimeout:
-            print(f"   ⚠ Login timed out. URL: {page.url}")
+            print(f"  Login timed out. URL: {page.url}")
             browser.close()
             sys.exit(1)
 
-        # ── Find latest prices post ────────────────────────────────────────
-        print("   Loading category page…")
+        # --- Find latest prices post -----------------------------------------
+        print("  Loading category page...")
         try:
             page.goto(CATEGORY_URL, wait_until="load", timeout=60000)
             page.wait_for_timeout(4000)
 
             post_links = page.query_selector_all("a[href*='/posts/']")
-            print(f"   Found {len(post_links)} post links")
+            print(f"  Found {len(post_links)} post links")
 
             prices_url = None
             for link in post_links:
@@ -229,7 +243,7 @@ def run():
                         if "http" not in href:
                             href = "https://redpandaacademy.mykajabi.com" + href
                         prices_url = href
-                        print(f"   ✓ Found prices post: {link.inner_text().strip()}")
+                        print(f"  Found prices post: {link.inner_text().strip()}")
                         break
                 except:
                     pass
@@ -239,20 +253,20 @@ def run():
                 if "http" not in href:
                     href = "https://redpandaacademy.mykajabi.com" + href
                 prices_url = href
-                print(f"   ⚠ No keyword match — using first post: {prices_url}")
+                print(f"  No keyword match -- using first post: {prices_url}")
 
             if not prices_url:
-                print(f"   ⚠ No post links found. URL: {page.url}")
+                print(f"  No post links found. URL: {page.url}")
                 browser.close()
                 sys.exit(1)
 
         except PWTimeout:
-            print("   ⚠ Category page timed out")
+            print("  Category page timed out")
             browser.close()
             sys.exit(1)
 
-        # ── Read prices post ───────────────────────────────────────────────
-        print("   Navigating to prices post…")
+        # --- Read prices post ------------------------------------------------
+        print("  Navigating to prices post...")
         try:
             page.goto(prices_url, wait_until="load", timeout=60000)
             page.wait_for_timeout(3000)
@@ -269,42 +283,42 @@ def run():
                 el = page.query_selector(sel)
                 if el:
                     page_text = el.inner_text()
-                    print(f"   ✓ Got content via {sel} ({len(page_text)} chars)")
+                    print(f"  Got content via {sel} ({len(page_text)} chars)")
                     break
 
             if not page_text:
                 page_text = page.inner_text("body")
-                print(f"   ⚠ Using full body ({len(page_text)} chars)")
+                print(f"  Using full body ({len(page_text)} chars)")
 
         except PWTimeout:
-            print("   ⚠ Price post timed out")
+            print("  Price post timed out")
             browser.close()
             sys.exit(1)
 
         browser.close()
 
     if not page_text.strip():
-        print("   ⚠ No text extracted — aborting.")
+        print("  No text extracted -- aborting.")
         sys.exit(1)
 
-    print("\n   Parsing prices…")
+    print("\n  Parsing prices...")
     updates = parse_prices(page_text, known_tickers)
 
     if not updates:
-        print("   ⚠ No ticker prices found. Format may have changed.")
-        print("   First 500 chars of page text:")
-        print("   " + page_text[:500].replace("\n", "\n   "))
+        print("  No ticker prices found. Format may have changed.")
+        print("  First 500 chars of page text:")
+        print("  " + page_text[:500].replace("\n", "\n  "))
         sys.exit(0)
 
-    print(f"\n   Parsed {len(updates)} ticker(s).")
+    print(f"\n  Parsed {len(updates)} ticker(s).")
     zones = load_zones()
     zones, changed = merge_updates(zones, updates, page_label)
 
     if changed > 0:
         save_zones(zones)
-        print(f"\n✅ red-panda-zones.json updated ({changed} change(s)).")
+        print(f"\nred-panda-zones.json updated ({changed} change(s)).")
     else:
-        print("\n✓ No price changes — already up to date.")
+        print("\nNo price changes -- already up to date.")
 
     sys.exit(0)
 
