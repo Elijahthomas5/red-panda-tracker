@@ -1,7 +1,7 @@
 name: Red Panda Zone Watcher
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours — picks up new Kajabi prices within 6h
+    - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:
 jobs:
   update-zones:
@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install playwright playwright-stealth requests && playwright install chromium --with-deps
+        run: pip install playwright requests && playwright install chromium --with-deps
       - name: Run Red Panda price scraper
         env:
           RP_EMAIL: ${{ secrets.RP_EMAIL }}
