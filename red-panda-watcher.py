@@ -184,44 +184,61 @@ def run():
         page = ctx.new_page()
         page.add_init_script(STEALTH_JS)  # mask headless signals, no external deps needed
 
-        # --- Login -----------------------------------------------------------
+        # --- Login (retry up to 3x if Cloudflare blocks) -------------------
         print(f"  Logging in as {RP_EMAIL}...")
-        try:
-            page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
-            page.wait_for_timeout(4000)
-
-            email_el = (
-                page.query_selector('input[type="email"]') or
-                page.query_selector('input[name*="email"]') or
-                page.query_selector('input[id*="email"]')
-            )
-            pw_el = (
-                page.query_selector('input[type="password"]') or
-                page.query_selector('input[name*="password"]')
-            )
-
-            if not email_el or not pw_el:
-                print("  Login form not found -- Cloudflare may still be blocking.")
-                browser.close()
-                sys.exit(1)
-
-            email_el.fill(RP_EMAIL)
-            pw_el.fill(RP_PASSWORD)
-            pw_el.press("Enter")
-
+        MAX_ATTEMPTS = 3
+        logged_in = False
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                page.wait_for_url(lambda url: "login" not in url, timeout=20000)
+                print(f"  Attempt {attempt}/{MAX_ATTEMPTS}...")
+                page.goto(KAJABI_LOGIN, wait_until="load", timeout=60000)
+                page.wait_for_timeout(5000)  # let Cloudflare challenge resolve
+
+                email_el = (
+                    page.query_selector('input[type="email"]') or
+                    page.query_selector('input[name*="email"]') or
+                    page.query_selector('input[id*="email"]')
+                )
+                pw_el = (
+                    page.query_selector('input[type="password"]') or
+                    page.query_selector('input[name*="password"]')
+                )
+
+                if not email_el or not pw_el:
+                    print(f"  Attempt {attempt}: login form not found (Cloudflare challenge?)")
+                    if attempt < MAX_ATTEMPTS:
+                        print("  Waiting 15s before retry...")
+                        page.wait_for_timeout(15000)
+                        continue
+                    print("  All login attempts failed -- Cloudflare blocking.")
+                    browser.close()
+                    sys.exit(1)
+
+                email_el.fill(RP_EMAIL)
+                pw_el.fill(RP_PASSWORD)
+                pw_el.press("Enter")
+                try:
+                    page.wait_for_url(lambda url: "login" not in url, timeout=20000)
+                except PWTimeout:
+                    page.wait_for_timeout(5000)
+
+                if "login" in page.url:
+                    print("  Login failed -- check RP_EMAIL / RP_PASSWORD secrets.")
+                    browser.close()
+                    sys.exit(1)
+
+                print(f"  Logged in -> {page.url}")
+                logged_in = True
+                break
+
             except PWTimeout:
-                page.wait_for_timeout(5000)
+                print(f"  Attempt {attempt}: login timed out.")
+                if attempt >= MAX_ATTEMPTS:
+                    browser.close()
+                    sys.exit(1)
+                page.wait_for_timeout(10000)
 
-            if "login" in page.url:
-                print("  Login failed -- check RP_EMAIL / RP_PASSWORD secrets.")
-                browser.close()
-                sys.exit(1)
-            print(f"  Logged in -> {page.url}")
-
-        except PWTimeout:
-            print(f"  Login timed out. URL: {page.url}")
+        if not logged_in:
             browser.close()
             sys.exit(1)
 
